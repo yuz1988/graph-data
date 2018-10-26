@@ -1,37 +1,59 @@
 import re
 
-file_name = '../data/release-youtube-links.txt'
-output_file_name = '../output/cleaned-youtube-links.txt'
+# input file name
+in_file_name = '../data/release-youtube-links.txt'
 
-removed_line_cnt = 0
-total_line_cnt = 0
-reversed_order_cnt = 0
-nodes_set = set()
-edges_set = set()
+# output file name
+out_link_file_name = '../output/cleaned-youtube-links.txt'
+out_user_mapping_file_name = '../output/user-sparse-to-dense-mapping.txt'
 
-with open(file_name) as f, open(output_file_name, 'w') as output_file:
+user_set = set()
+adj_map = {}   # adjacency list
+
+with open(in_file_name) as f:
     lines = f.readlines()
     for line in lines:
-        total_line_cnt += 1
         vertices = re.split('\s+', line)
         from_v = int(vertices[0])
         to_v = int(vertices[1])
-        from_to_edge = str(from_v) + " " + str(to_v)
-        to_from_edge = str(to_v) + " " + str(from_v)
+        if from_v != to_v:
+            if from_v not in adj_map:
+                adj_map[from_v] = set()
+            if to_v not in adj_map:
+                adj_map[to_v] = set()
+            adj_map[from_v].add(to_v)
+            adj_map[to_v].add(from_v)
+            user_set.add(from_v)
+            user_set.add(to_v)
 
-        # Remove self edges and duplicate edges.
-        if (from_v == to_v) or (from_to_edge in edges_set) or (to_from_edge in edges_set):
-            removed_line_cnt += 1
-        else:
-            output_file.write("{} {}\n".format(from_v, to_v))
-            edges_set.add(from_to_edge)
-            nodes_set.add(from_v)
-            nodes_set.add(to_v)
-            if to_v < from_v:
-                reversed_order_cnt += 1
+print("Number of distinct users: {}\n".format(len(user_set)))
 
-print("Total lines: {}\n".format(total_line_cnt))
-print("Removed lines: {}\n".format(removed_line_cnt))
-print("Remaining edges: {}\n".format(len(edges_set)))
-print("Distinct nodes: {}\n".format(len(nodes_set)))
-print("Unique edges with reverse order: {}\n".format(reversed_order_cnt))
+# create sparse to dense (consecutive from 0) user mapping.
+user_list = list(user_set)
+user_list.sort()
+sparse_to_dense_user_mapping = {}
+dense_to_sparse_user_mapping = {}
+with open(out_user_mapping_file_name, 'w') as out:
+    for i in range(len(user_list)):
+        dense_to_sparse_user_mapping[i] = user_list[i]
+        sparse_to_dense_user_mapping[user_list[i]] = i
+        out.write("{} {}\n".format(user_list[i], i))
+print("User sparse to dense mapping file has been written.\n")
+
+
+# generate compressed adjacency list.
+compressed_adj_list = []
+for i in range(len(user_list)):
+    neighbor_list = adj_map[dense_to_sparse_user_mapping[i]]
+    compressed_user_list = []
+    for user in neighbor_list:
+        compressed_user_list.append(sparse_to_dense_user_mapping[user])
+    compressed_user_list.sort()
+    compressed_adj_list.append(compressed_user_list)
+
+# write compressed links to file, keep links: from_v < to_v.
+with open(out_link_file_name, 'w') as output_file:
+    for i in range(len(compressed_adj_list)):
+        for j in compressed_adj_list[i]:
+            if i < j:
+                output_file.write("{} {}\n".format(i, j))
